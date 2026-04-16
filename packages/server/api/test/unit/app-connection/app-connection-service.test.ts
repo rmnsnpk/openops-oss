@@ -56,6 +56,7 @@ jest.mock('../../../src/app/helper/pagination/pagination-utils', () => ({
 import { BlockMetadataModel } from '@openops/blocks-framework';
 import { encryptUtils } from '@openops/server-shared';
 import {
+  AppConnectionSortBy,
   AppConnectionStatus,
   AppConnectionType,
   ApplicationError,
@@ -63,6 +64,7 @@ import {
   ErrorCode,
   PackageType,
   PatchAppConnectionRequestBody,
+  SortDirection,
 } from '@openops/shared';
 import { appConnectionService } from '../../../src/app/app-connection/app-connection-service/app-connection-service';
 import { restoreRedactedSecrets } from '../../../src/app/app-connection/app-connection-utils';
@@ -73,12 +75,14 @@ describe('appConnectionService.update', () => {
   const projectId = 'project-123';
   const userId = 'user-123';
   const connectionName = 'test-conn';
+  const authProviderKey = 'test-provider';
 
   const request: PatchAppConnectionRequestBody = {
     id: 'conn-id-123',
     type: AppConnectionType.SECRET_TEXT,
     projectId,
     name: connectionName,
+    authProviderKey,
     value: {
       type: AppConnectionType.SECRET_TEXT,
       secret_text: 'abc',
@@ -89,6 +93,7 @@ describe('appConnectionService.update', () => {
     id: 'conn-id-123',
     name: connectionName,
     projectId,
+    authProviderKey,
     value: 'encrypted-{"type":"SECRET_TEXT","secret_text":"old"}',
     status: AppConnectionStatus.ACTIVE,
   };
@@ -158,6 +163,22 @@ describe('appConnectionService.update', () => {
     });
   });
 
+  test('should throw an error if the connection name contains invalid characters', async () => {
+    const invalidRequest: PatchAppConnectionRequestBody = {
+      ...request,
+      name: 'test-conn$%&',
+    };
+
+    await expect(
+      appConnectionService.patch({
+        projectId,
+        request: invalidRequest,
+        userId,
+        authProperty: blockMetadata.auth,
+      }),
+    ).rejects.toThrow();
+  });
+
   test('should throw if the connection was not found', async () => {
     findOneByMock.mockResolvedValue(null);
 
@@ -221,5 +242,33 @@ describe('appConnectionService.list', () => {
       'LOWER(app_connection.authProviderKey) IN (:...authProviders)',
       { authProviders: ['github', 'slack'] },
     );
+  });
+
+  test('should apply requested sorting for connections list', async () => {
+    await appConnectionService.list({
+      projectId,
+      cursorRequest: null,
+      name: undefined,
+      status: undefined,
+      limit: 10,
+      connectionsIds: undefined,
+      authProviders: undefined,
+      sortBy: AppConnectionSortBy.NAME,
+      sortDirection: SortDirection.ASC,
+    });
+
+    expect(buildPaginator).toHaveBeenCalledWith({
+      entity: AppConnectionEntity,
+      query: {
+        limit: 10,
+        order: 'ASC',
+        afterCursor: null,
+        beforeCursor: null,
+      },
+      customPaginationColumn: {
+        columnPath: 'name',
+        columnName: 'app_connection.name',
+      },
+    });
   });
 });

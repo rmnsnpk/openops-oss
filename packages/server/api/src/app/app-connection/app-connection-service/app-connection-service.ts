@@ -7,6 +7,7 @@ import {
 import {
   AppConnection,
   AppConnectionId,
+  AppConnectionSortBy,
   AppConnectionStatus,
   AppConnectionType,
   AppConnectionValue,
@@ -18,14 +19,18 @@ import {
   OAuth2GrantType,
   openOpsId,
   PatchAppConnectionRequestBody,
+  PatchAppConnectionRequestBody as PatchAppConnectionRequestBodySchema,
   ProjectId,
   SeekPage,
+  SortDirection,
   UpsertAppConnectionRequestBody,
+  UpsertAppConnectionRequestBody as UpsertAppConnectionRequestBodySchema,
   UserId,
 } from '@openops/shared';
 import dayjs from 'dayjs';
 import { FindOperator, ILike, In } from 'typeorm';
 import { repoFactory } from '../../core/db/repo-factory';
+import { parseAndVerify } from '../../helper/json-validator';
 import { buildPaginator } from '../../helper/pagination/build-paginator';
 import { paginationHelper } from '../../helper/pagination/pagination-utils';
 import {
@@ -45,10 +50,14 @@ import { oauth2Util } from './oauth2/oauth2-util';
 import { engineValidateAuth } from './validate-auth';
 
 const repo = repoFactory(AppConnectionEntity);
+const DEFAULT_APP_CONNECTION_SORT_BY = AppConnectionSortBy.UPDATED;
+const DEFAULT_APP_CONNECTION_SORT_DIRECTION = SortDirection.DESC;
 
 export const appConnectionService = {
   async upsert(params: UpsertParams): Promise<AppConnection> {
     const { projectId, request } = params;
+
+    parseAndVerify(UpsertAppConnectionRequestBodySchema, request);
 
     const validatedConnectionValue = await validateConnectionValue({
       connection: request,
@@ -100,6 +109,8 @@ export const appConnectionService = {
 
   async patch(params: PatchParams): Promise<AppConnection> {
     const { projectId, request } = params;
+
+    parseAndVerify(PatchAppConnectionRequestBodySchema, request);
 
     const existingConnection = await repo().findOneBy({
       id: request.id,
@@ -225,20 +236,26 @@ export const appConnectionService = {
     limit,
     connectionsIds,
     authProviders,
+    sortBy,
+    sortDirection,
   }: ListParams): Promise<SeekPage<AppConnection>> {
+    const sortingConfig = resolveAppConnectionSorting({
+      sortBy,
+      sortDirection,
+    });
     const decodedCursor = paginationHelper.decodeCursor(cursorRequest);
 
     const paginator = buildPaginator({
       entity: AppConnectionEntity,
       query: {
         limit,
-        order: 'DESC',
+        order: sortingConfig.order,
         afterCursor: decodedCursor.nextCursor,
         beforeCursor: decodedCursor.previousCursor,
       },
       customPaginationColumn: {
-        columnPath: 'updated',
-        columnName: 'app_connection.updated',
+        columnPath: sortingConfig.columnPath,
+        columnName: sortingConfig.columnName,
       },
     });
 
@@ -540,6 +557,8 @@ type ListParams = {
   status: AppConnectionStatus[] | undefined;
   limit: number;
   authProviders: string[] | undefined;
+  sortBy?: AppConnectionSortBy;
+  sortDirection?: SortDirection;
 };
 
 type CountByProjectParams = {
@@ -550,3 +569,42 @@ type ValidateConnectionValueParams = {
   connection: UpsertAppConnectionRequestBody;
   projectId: ProjectId;
 };
+
+function resolveAppConnectionSorting({
+  sortBy,
+  sortDirection,
+}: {
+  sortBy?: AppConnectionSortBy;
+  sortDirection?: SortDirection;
+}): {
+  columnPath: string;
+  columnName: string;
+  order: 'ASC' | 'DESC';
+} {
+  const resolvedSortBy = sortBy ?? DEFAULT_APP_CONNECTION_SORT_BY;
+  const resolvedSortDirection =
+    sortDirection ?? DEFAULT_APP_CONNECTION_SORT_DIRECTION;
+
+  const sortByToColumnMap: Record<
+    AppConnectionSortBy,
+    { columnPath: string; columnName: string }
+  > = {
+    [AppConnectionSortBy.NAME]: {
+      columnPath: 'name',
+      columnName: 'app_connection.name',
+    },
+    [AppConnectionSortBy.CREATED]: {
+      columnPath: 'created',
+      columnName: 'app_connection.created',
+    },
+    [AppConnectionSortBy.UPDATED]: {
+      columnPath: 'updated',
+      columnName: 'app_connection.updated',
+    },
+  };
+
+  return {
+    ...sortByToColumnMap[resolvedSortBy],
+    order: resolvedSortDirection === SortDirection.ASC ? 'ASC' : 'DESC',
+  };
+}
