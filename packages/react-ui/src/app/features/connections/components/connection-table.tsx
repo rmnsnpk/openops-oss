@@ -1,3 +1,4 @@
+import { ConfirmationDeleteDialog } from '@/app/common/components/delete-dialog';
 import { PermissionGuard } from '@/app/common/components/permission-guard';
 import { appConnectionsApi } from '@/app/features/connections/lib/app-connections-api';
 import { handleMutationError } from '@/app/interceptors/interceptor-utils';
@@ -5,7 +6,9 @@ import { isSortDirection } from '@/app/lib/sort-direction';
 import { formatUtils } from '@/app/lib/utils';
 import {
   BlockIcon,
+  Button,
   DataTable,
+  DataTableBulkAction,
   DataTableColumnHeader,
   DropdownMenu,
   DropdownMenuContent,
@@ -14,18 +17,25 @@ import {
   PaginationParams,
   RowDataWithActions,
   StatusIconWithText,
+  WarningWithIcon,
 } from '@openops/components/ui';
 import {
-  AppConnection,
   AppConnectionSortBy,
   AppConnectionStatus,
+  AppConnectionWithoutSensitiveData,
   MinimalFlow,
   Permission,
 } from '@openops/shared';
 import { ColumnDef } from '@tanstack/react-table';
 import { t } from 'i18next';
-import { CheckIcon, EllipsisVertical } from 'lucide-react';
-import { Dispatch, SetStateAction, useCallback, useState } from 'react';
+import { CheckIcon, EllipsisVertical, Trash2 } from 'lucide-react';
+import {
+  Dispatch,
+  SetStateAction,
+  useCallback,
+  useMemo,
+  useState,
+} from 'react';
 
 import { appConnectionUtils } from '../lib/app-connections-utils';
 
@@ -74,7 +84,7 @@ const MenuConnectionColumn = ({
   row,
   setRefresh,
 }: {
-  row: RowDataWithActions<AppConnection>;
+  row: RowDataWithActions<AppConnectionWithoutSensitiveData>;
   setRefresh: Dispatch<SetStateAction<boolean>>;
 }) => {
   const [linkedFlows, setLinkedFlows] = useState<MinimalFlow[]>([]);
@@ -167,7 +177,9 @@ const MenuConnectionColumn = ({
 };
 const columns: (
   setRefresh: Dispatch<SetStateAction<boolean>>,
-) => ColumnDef<RowDataWithActions<AppConnection>>[] = (setRefresh) => {
+) => ColumnDef<RowDataWithActions<AppConnectionWithoutSensitiveData>>[] = (
+  setRefresh,
+) => {
   return [
     {
       accessorKey: 'authProviderKey',
@@ -288,6 +300,95 @@ const fetchData = async (
 
 function AppConnectionsTable() {
   const { refresh, setRefresh } = useConnectionsContext();
+  const [selectedRows, setSelectedRows] = useState<
+    RowDataWithActions<AppConnectionWithoutSensitiveData>[]
+  >([]);
+
+  const {
+    mutateAsync: deleteConnections,
+    isPending: isDeleteConnectionsPending,
+  } = useMutation({
+    mutationFn: async (connectionIds: string[]) => {
+      await appConnectionsApi.deleteMany({ connectionIds });
+    },
+    onError: handleMutationError,
+  });
+
+  const resetSelectedRows = useCallback(() => {
+    setSelectedRows([]);
+  }, []);
+
+  const completeBulkAction = useCallback(
+    (resetSelection: () => void) => {
+      resetSelection();
+      resetSelectedRows();
+      setRefresh((prev) => !prev);
+    },
+    [resetSelectedRows, setRefresh],
+  );
+
+  const deleteSelectedConnections = useCallback(async () => {
+    await deleteConnections(selectedRows.map((row) => row.id));
+  }, [deleteConnections, selectedRows]);
+
+  const bulkActions = useMemo<
+    DataTableBulkAction<AppConnectionWithoutSensitiveData>[]
+  >(
+    () => [
+      {
+        render: (_selectedRows, resetSelection) => (
+          <PermissionGuard
+            permission={Permission.DELETE_APP_CONNECTION}
+            tooltipClassName="flex"
+          >
+            <ConfirmationDeleteDialog
+              title={
+                <span className="text-primary text-[22px]">
+                  {t('Delete connections')}
+                </span>
+              }
+              className="max-w-[700px]"
+              message={
+                <span className="max-w-[652px] block text-primary text-base font-medium">
+                  {t('Are you sure you want to delete {count} connections?', {
+                    count: selectedRows.length,
+                  })}
+                </span>
+              }
+              mutationFn={async () => {
+                await deleteSelectedConnections();
+                completeBulkAction(resetSelection);
+              }}
+              entityName={t('connections')}
+              content={
+                <WarningWithIcon
+                  message={t(
+                    'Workflows that use these connections may fail until you update or reconnect them.',
+                  )}
+                />
+              }
+            >
+              <Button
+                variant="destructive"
+                size="sm"
+                className="gap-2"
+                loading={isDeleteConnectionsPending}
+              >
+                <Trash2 className="h-4 w-4" />
+                {t('Delete')}
+              </Button>
+            </ConfirmationDeleteDialog>
+          </PermissionGuard>
+        ),
+      },
+    ],
+    [
+      completeBulkAction,
+      deleteSelectedConnections,
+      isDeleteConnectionsPending,
+      selectedRows.length,
+    ],
+  );
 
   return (
     <div className="flex-col w-full">
@@ -298,6 +399,9 @@ function AppConnectionsTable() {
           refresh={refresh}
           filters={filters}
           enableSorting={true}
+          enableSelection={true}
+          onSelectedRowsChange={(rows) => setSelectedRows(rows)}
+          bulkActions={bulkActions}
         />
       </div>
     </div>

@@ -5,6 +5,7 @@ export * from './lib/ai/tools-constants';
 export * from './lib/analytics';
 export * from './lib/app-connection/app-connection';
 export * from './lib/app-connection/connections-utils';
+export * from './lib/app-connection/dto/delete-app-connections-request';
 export * from './lib/app-connection/dto/patch-app-connection-request';
 export * from './lib/app-connection/dto/read-app-connection-request';
 export * from './lib/app-connection/dto/upsert-app-connection-request';

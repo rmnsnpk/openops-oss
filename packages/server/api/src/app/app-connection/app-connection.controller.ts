@@ -5,6 +5,7 @@ import {
 } from '@fastify/type-provider-typebox';
 import {
   AppConnectionWithoutSensitiveData,
+  DeleteAppConnectionsRequest,
   ListAppConnectionsRequestQuery,
   OpenOpsId,
   PatchAppConnectionRequestBody,
@@ -119,6 +120,20 @@ export const appConnectionController: FastifyPluginCallbackTypebox = (
     },
   );
   app.delete(
+    '/',
+    DeleteAppConnectionsRequestOptions,
+    async (request, reply): Promise<void> => {
+      await appConnectionService.deleteMany({
+        connectionIds: request.query.connectionIds,
+        projectId: request.principal.projectId,
+        userId: request.principal.id,
+      });
+
+      await reply.status(StatusCodes.NO_CONTENT).send();
+    },
+  );
+
+  app.delete(
     '/:id',
     DeleteAppConnectionRequest,
     async (request, reply): Promise<void> => {
@@ -210,6 +225,25 @@ const ListAppConnectionsRequest = {
       'List all app connections in the project with advanced filtering and pagination capabilities. Supports filtering by name, block type, status, and authentication provider. Results are paginated and include metadata about each connection. All sensitive data is automatically redacted in the response.',
     response: {
       [StatusCodes.OK]: SeekPage(AppConnectionWithoutSensitiveData),
+    },
+  },
+};
+
+const DeleteAppConnectionsRequestOptions = {
+  config: {
+    security: getProjectScopedRoutePolicy({
+      allowedPrincipals: [PrincipalType.USER, PrincipalType.SERVICE],
+      permission: Permission.DELETE_APP_CONNECTION,
+    }),
+  },
+  schema: {
+    tags: ['app-connections'],
+    security: [SERVICE_KEY_SECURITY_OPENAPI],
+    description:
+      'Delete multiple app connections by ID. Triggers a connection deleted event per connection. This action cannot be undone.',
+    querystring: DeleteAppConnectionsRequest,
+    response: {
+      [StatusCodes.NO_CONTENT]: Type.Never(),
     },
   },
 };

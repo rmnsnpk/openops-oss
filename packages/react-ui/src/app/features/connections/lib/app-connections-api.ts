@@ -2,11 +2,13 @@ import { api } from '@/app/lib/api';
 import {
   AppConnection,
   AppConnectionWithoutSensitiveData,
+  DeleteAppConnectionsRequest,
   ListAppConnectionsRequestQuery,
   PatchAppConnectionRequestBody,
   SeekPage,
   UpsertAppConnectionRequestBody,
 } from '@openops/shared';
+import qs from 'qs';
 
 export const appConnectionsApi = {
   list(
@@ -31,5 +33,9 @@ export const appConnectionsApi = {
   },
   delete(id: string): Promise<void> {
     return api.delete<void>(`/v1/app-connections/${id}`);
+  },
+  deleteMany(request: DeleteAppConnectionsRequest): Promise<void> {
+    const query = qs.stringify(request, { arrayFormat: 'repeat' });
+    return api.delete<void>(`/v1/app-connections?${query}`);
   },
 };

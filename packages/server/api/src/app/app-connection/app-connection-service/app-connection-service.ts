@@ -35,6 +35,7 @@ import { buildPaginator } from '../../helper/pagination/build-paginator';
 import { paginationHelper } from '../../helper/pagination/pagination-utils';
 import {
   sendConnectionCreatedEvent,
+  sendConnectionDeletedEvent,
   sendConnectionUpdatedEvent,
 } from '../../telemetry/event-models';
 import {
@@ -226,6 +227,22 @@ export const appConnectionService = {
 
   async delete(params: DeleteParams): Promise<void> {
     await repo().delete(params);
+  },
+
+  async deleteMany({
+    connectionIds,
+    projectId,
+    userId,
+  }: DeleteManyParams): Promise<void> {
+    for (const id of connectionIds) {
+      const existing = await this.getOneOrThrow({ id, projectId });
+      await this.delete({ id, projectId });
+      sendConnectionDeletedEvent(
+        userId,
+        existing.projectId,
+        existing.authProviderKey,
+      );
+    }
   },
 
   async list({
@@ -548,6 +565,12 @@ type GetOneParams = {
 type DeleteParams = {
   projectId: ProjectId;
   id: AppConnectionId;
+};
+
+type DeleteManyParams = {
+  connectionIds: AppConnectionId[];
+  projectId: ProjectId;
+  userId: UserId;
 };
 
 type ListParams = {
